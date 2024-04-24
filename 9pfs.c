@@ -41,6 +41,8 @@ int	iscachectl(const char*);
 char	*breakpath(char*);
 void	usage(void);
 
+int do9p(Fcall *t, Fcall *r);
+
 Dir	*rootdir;
 
 int
@@ -581,30 +583,38 @@ iscached(const char *path)
 Dir*
 addtocache(const char *path)
 {
-	FFid	*f;
-	Dir	*d;
+	FFid	*f = NULL;
+	Dir		*d = NULL;
 	char	*dname;
 	long	n;
 
 	DPRINT("addtocache %s\n", path);
 	dname = estrdup(path);
 	breakpath(dname);
-	if((f = _9pwalk(dname)) == NULL){
-		free(dname);
-		return NULL;
+	if( (f = _9pwalk(dname)) == NULL){
+		goto err;
 	}
 	f->mode |= O_RDONLY;
 	if(_9popen(f) == -1){
-		free(dname);
-		return NULL;
+		f = NULL;
+		goto err;
 	}
 	DPRINT("addtocache about to dirread\n");
-	if((n = _9pdirread(f, &d)) < 0){
-		free(dname);
-		return NULL;
+	if( (n = _9pdirread(f, &d)) < 0){
+		d = NULL;
+		goto err;
 	}
+	d = iscached(path);
+err:
 	free(dname);
-	return iscached(path);
+	if(f != NULL) {
+		//	_9pclunk(f); (also deletes from cache)
+		Fcall	tclunk, rclunk;
+		tclunk.type = Tclunk;
+		tclunk.fid = f->fid;
+		do9p(&tclunk, &rclunk);
+	}
+	return d;
 }
 	
 int
